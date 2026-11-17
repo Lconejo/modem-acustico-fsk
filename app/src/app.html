@@ -1,0 +1,1178 @@
+<title>Módem acústico FSK</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Diseño: tablero de circuito (transmisor en coral, receptor en azul) sobre instrumentos tipo analizador de espectro.
+   Oscuro por omisión; en claro se lee como una hoja de datos. */
+:root {
+  --bg: #0D1117; --panel: #141A22; --board: #0F161E; --raise: #1A222D; --line: #283444; --grid: #1A2430;
+  --fg: #E5EAF0; --muted: #8E9BAB; --faint: #5D6B7C;
+  --tx: #FF6B57; --rx: #4DA3FF; --ok: #3DD68C; --warn: #F2B544; --err: #FF5D6C;
+  --f-pre: #6B7787; --f-sync: #F2B544; --f-len: #A68BFF; --f-seq: #2EC4B6; --f-data: #4DA3FF; --f-crc: #FF8A5B;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #F2F4F7; --panel: #FFFFFF; --board: #E9EEF3; --raise: #F8FAFC; --line: #CBD5E0; --grid: #D8E0E8;
+    --fg: #16202B; --muted: #536173; --faint: #8593A3;
+    --tx: #D23E2A; --rx: #1D6BD0; --ok: #11875A; --warn: #A66800; --err: #C62B3B;
+    --f-pre: #8593A3; --f-sync: #C98A00; --f-len: #7B5CE0; --f-seq: #128C80; --f-data: #1D6BD0; --f-crc: #D9622B;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #F2F4F7; --panel: #FFFFFF; --board: #E9EEF3; --raise: #F8FAFC; --line: #CBD5E0; --grid: #D8E0E8;
+  --fg: #16202B; --muted: #536173; --faint: #8593A3;
+  --tx: #D23E2A; --rx: #1D6BD0; --ok: #11875A; --warn: #A66800; --err: #C62B3B;
+  --f-pre: #8593A3; --f-sync: #C98A00; --f-len: #7B5CE0; --f-seq: #128C80; --f-data: #1D6BD0; --f-crc: #D9622B;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.app { max-width: 1240px; margin: 0 auto; display: grid; gap: 18px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(26px, 3.4vw, 36px); font-weight: 700; letter-spacing: -0.015em; line-height: 1.05; }
+h2 { font-size: 15px; font-weight: 600; letter-spacing: 0.01em; }
+.eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+p { margin: 0; }
+
+header.top { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: flex-end; justify-content: space-between; }
+.brand { display: grid; gap: 6px; min-width: 0; }
+.brand .sub { color: var(--muted); font-size: 13.5px; }
+.cfg { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; }
+.field { display: grid; gap: 5px; font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-family: var(--font-mono); }
+select, input[type="number"], input[type="text"], textarea {
+  font: 14px/1.4 var(--font-body); color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 7px; padding: 8px 10px; letter-spacing: 0; text-transform: none; min-width: 0;
+}
+textarea { width: 100%; resize: vertical; min-height: 64px; }
+select:focus-visible, input:focus-visible, textarea:focus-visible, button:focus-visible, .chip:focus-visible { outline: 2px solid var(--rx); outline-offset: 2px; }
+
+button {
+  font: 600 14px/1 var(--font-body); color: var(--fg); background: var(--raise); border: 1px solid var(--line);
+  border-radius: 7px; padding: 10px 14px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px;
+}
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.go-tx { background: var(--tx); border-color: var(--tx); color: #fff; }
+button.go-rx { background: var(--rx); border-color: var(--rx); color: #fff; }
+button.ghost { background: transparent; }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 12px 14px 11px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--fg); font-weight: 600; }
+.tabs button .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); display: inline-block; }
+.tabs button[data-tab="tx"] .dot { background: var(--tx); }
+.tabs button[data-tab="rx"] .dot { background: var(--rx); }
+.tabs button[data-tab="sim"] .dot { background: var(--warn); }
+.tabs button[data-tab="test"] .dot { background: var(--ok); }
+
+/* tablero */
+.board-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: stretch; }
+.board {
+  background-color: var(--board); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; min-width: 0;
+  background-image: radial-gradient(var(--grid) 1.2px, transparent 1.2px); background-size: 18px 18px;
+}
+.board svg { display: block; width: 100%; min-width: 760px; height: auto; }
+.trace { fill: none; stroke: var(--line); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.trace.flow.tx { stroke: var(--tx); stroke-dasharray: 7 9; animation: flow 0.55s linear infinite; }
+.trace.flow.rx { stroke: var(--rx); stroke-dasharray: 7 9; animation: flow 0.55s linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -16; } }
+.chip { cursor: pointer; outline: none; }
+.chip .body { fill: var(--raise); stroke: var(--line); stroke-width: 1.5; transition: stroke 0.2s; }
+.chip .pin { stroke: var(--faint); stroke-width: 2; }
+.chip .lbl { fill: var(--fg); font-family: var(--font-display); font-size: 15px; font-weight: 600; }
+.chip .val { fill: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.chip .led { fill: var(--faint); }
+.chip.tx.on .body { stroke: var(--tx); stroke-width: 2.2; filter: drop-shadow(0 0 7px color-mix(in srgb, var(--tx) 55%, transparent)); }
+.chip.rx.on .body { stroke: var(--rx); stroke-width: 2.2; filter: drop-shadow(0 0 7px color-mix(in srgb, var(--rx) 55%, transparent)); }
+.chip.tx.on .led { fill: var(--tx); }
+.chip.rx.on .led { fill: var(--rx); }
+.chip.okflash .led { fill: var(--ok); }
+.chip.errflash .led { fill: var(--err); }
+.chip.search .led { fill: var(--warn); }
+.chip.sel .body { stroke-width: 2.4; stroke: var(--fg); }
+.wave { fill: none; stroke: var(--faint); stroke-width: 2; stroke-linecap: round; opacity: 0.5; }
+.air.on .wave { stroke: var(--warn); animation: pulse 0.9s ease-in-out infinite; }
+.air.on .wave:nth-child(2) { animation-delay: 0.15s; } .air.on .wave:nth-child(3) { animation-delay: 0.3s; }
+@keyframes pulse { 0%, 100% { opacity: 0.25; } 50% { opacity: 1; } }
+.air-lbl { fill: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.row-lbl { fill: var(--muted); font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.14em; }
+@media (prefers-reduced-motion: reduce) { .trace.flow.tx, .trace.flow.rx, .air.on .wave { animation: none; } }
+
+.stage-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.stage-card h3 { font-size: 20px; font-weight: 600; }
+.stage-card .formula { font-family: var(--font-mono); font-size: 12.5px; background: var(--raise); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; overflow-x: auto; white-space: nowrap; }
+.stage-card .live { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+.stage-card .live b { color: var(--fg); font-weight: 600; }
+.follow { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+@media (max-width: 960px) { .board-wrap { grid-template-columns: 1fr; } }
+
+/* paneles */
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; display: grid; gap: 14px; min-width: 0; }
+.panel-grid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 860px) { .panel-grid { grid-template-columns: 1fr; } }
+.sub-block { display: grid; gap: 10px; align-content: start; min-width: 0; }
+.hint { font-size: 13px; color: var(--muted); }
+.notice { border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--line)); background: color-mix(in srgb, var(--warn) 10%, var(--panel)); border-radius: 9px; padding: 10px 12px; font-size: 13.5px; }
+.pill { font: 600 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 6px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.pill.live { color: var(--rx); border-color: var(--rx); }
+.pill.busy { color: var(--warn); border-color: var(--warn); }
+.pill.bad { color: var(--err); border-color: var(--err); }
+.slider { display: grid; gap: 4px; }
+.slider .top { display: flex; justify-content: space-between; font-size: 13px; }
+.slider input { width: 100%; accent-color: var(--warn); }
+.progress { height: 6px; background: var(--raise); border-radius: 99px; overflow: hidden; border: 1px solid var(--line); }
+.progress > i { display: block; height: 100%; width: 0; background: var(--ok); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13.5px; }
+.kv dt { color: var(--muted); } .kv dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* instrumentos */
+.inst { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.card header { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.span-12 { grid-column: span 12; } .span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; }
+@media (max-width: 960px) { .span-7, .span-5 { grid-column: span 12; } }
+canvas { display: block; width: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+.spec-wrap { position: relative; }
+.spec-wrap canvas { height: 220px; border-radius: 8px; background: var(--board); }
+.spec-axis { position: absolute; inset: 0 auto 0 0; pointer-events: none; }
+.spec-axis span { position: absolute; left: 6px; white-space: nowrap; transform: translateY(-50%); font: 10.5px var(--font-mono); color: var(--muted); background: color-mix(in srgb, var(--board) 75%, transparent); padding: 0 3px; border-radius: 3px; }
+#detCanvas { height: 220px; }
+.msgs { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 300px; overflow-y: auto; }
+.msgs li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--raise); }
+.msgs .badge { grid-row: span 2; align-self: start; font: 600 11px/1 var(--font-mono); padding: 5px 7px; border-radius: 5px; }
+.msgs .badge.ok { color: var(--ok); border: 1px solid var(--ok); }
+.msgs .badge.bad { color: var(--err); border: 1px solid var(--err); }
+.msgs .txt { overflow-wrap: anywhere; }
+.msgs .txt.bad { color: var(--muted); text-decoration: line-through; text-decoration-color: var(--err); }
+.msgs .meta { font: 11.5px var(--font-mono); color: var(--muted); }
+.empty { color: var(--muted); font-size: 13.5px; padding: 8px 0; }
+.counters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.counter { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--raise); }
+.counter b { display: block; font: 600 24px/1.1 var(--font-display); font-variant-numeric: tabular-nums; }
+.counter span { font-size: 12px; color: var(--muted); }
+.counter.ok b { color: var(--ok); } .counter.bad b { color: var(--err); }
+
+/* tablas y gráficas */
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 9px; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: right; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font: 600 11px var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--raise); }
+tr:last-child td { border-bottom: 0; }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+.chart .axis { stroke: var(--line); }
+.chart .gridl { stroke: var(--grid); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--fg); color: var(--bg); padding: 10px 14px; border-radius: 8px; font-size: 13.5px; z-index: 20; max-width: calc(100% - 32px); }
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">Aplicación de comunicaciones · Ingeniería en Computación · Facultad de Ingeniería</span>
+      <h1>Módem acústico FSK</h1>
+      <p class="sub">Envía texto de un equipo a otro con sonido: bocina → aire → micrófono, sin red ni cables.</p>
+    </div>
+    <div class="cfg">
+      <label class="field" for="cfgMode">Tonos
+        <select id="cfgMode">
+          <option value="salto" selected>Salto de frecuencia · 8 tonos</option>
+          <option value="simple">FSK simple · 2 tonos</option>
+        </select>
+      </label>
+      <label class="field" for="cfgBaud">Velocidad
+        <select id="cfgBaud">
+          <option value="50">50 bit/s</option>
+          <option value="100" selected>100 bit/s</option>
+          <option value="200">200 bit/s</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Modo">
+    <button role="tab" data-tab="tx" aria-selected="true"><i class="dot"></i>Transmitir</button>
+    <button role="tab" data-tab="rx" aria-selected="false"><i class="dot"></i>Recibir</button>
+    <button role="tab" data-tab="sim" aria-selected="false"><i class="dot"></i>Canal simulado</button>
+    <button role="tab" data-tab="test" aria-selected="false"><i class="dot"></i>Pruebas</button>
+  </nav>
+
+  <section class="board-wrap" aria-label="Recorrido de la señal">
+    <div class="board"><svg id="board" viewBox="0 0 1000 270" role="img" aria-label="Diagrama de bloques del módem"></svg></div>
+    <aside class="stage-card" id="stageCard" aria-live="polite">
+      <span class="eyebrow" id="stEyebrow"></span>
+      <h3 id="stTitle"></h3>
+      <p id="stText"></p>
+      <div class="formula" id="stFormula"></div>
+      <div class="live" id="stLive"></div>
+      <label class="follow"><input type="checkbox" id="follow" checked> Seguir la señal</label>
+    </aside>
+  </section>
+
+  <!-- mensaje compartido por Transmitir y Canal simulado -->
+  <section class="panel" id="msgPanel">
+    <div class="row" style="justify-content: space-between;">
+      <label class="field" for="msg" style="flex: 1 1 100%;">Mensaje
+        <textarea id="msg" rows="2">Hola desde el módem acústico de Sistemas de Comunicaciones.</textarea>
+      </label>
+    </div>
+    <p class="hint mono" id="msgInfo"></p>
+  </section>
+
+  <section class="panel" id="tab-tx" role="tabpanel">
+    <div class="panel-grid">
+      <div class="sub-block">
+        <h2>Transmitir por la bocina</h2>
+        <p class="hint">Sube el volumen al máximo y apunta la bocina hacia el micrófono del otro equipo. Los dos equipos deben tener los mismos tonos y la misma velocidad.</p>
+        <div class="row">
+          <button class="go-tx" id="btnTx">Transmitir mensaje</button>
+          <button id="btnStopTx" disabled>Detener</button>
+          <button class="ghost" id="btnWav">Descargar audio</button>
+        </div>
+        <p class="hint mono" id="txStatus">Listo para transmitir.</p>
+      </div>
+      <div class="sub-block">
+        <h2>Ráfaga de prueba</h2>
+        <p class="hint">Envía tramas numeradas con 32 bytes conocidos. El receptor las cuenta y mide los bits erróneos en la pestaña Recibir.</p>
+        <div class="row">
+          <label class="field" for="burstN">Tramas
+            <select id="burstN"><option>10</option><option selected>20</option><option>30</option></select>
+          </label>
+          <button class="go-tx" id="btnBurst">Enviar ráfaga</button>
+        </div>
+        <div class="progress"><i id="burstBar"></i></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="tab-rx" role="tabpanel" hidden>
+    <div class="panel-grid">
+      <div class="sub-block">
+        <div class="row" style="justify-content: space-between;">
+          <h2>Recibir con el micrófono</h2>
+          <span class="pill" id="micPill">Apagado</span>
+        </div>
+        <p class="hint">El micrófono se abre sin cancelación de eco ni supresión de ruido, porque esos filtros borran los tonos.</p>
+        <div class="row">
+          <button class="go-rx" id="btnMic">Activar micrófono</button>
+          <button id="btnMicStop" disabled>Apagar</button>
+        </div>
+        <div class="notice" id="micBlocked" hidden></div>
+        <h2 style="margin-top: 6px;">Analizar una grabación</h2>
+        <p class="hint">Graba la transmisión con la app de grabadora del celular y súbela aquí (WAV, MP3, M4A u OGG).</p>
+        <div class="row">
+          <input type="file" id="fileRec" accept="audio/*,.wav,.mp3,.m4a,.ogg,.webm">
+        </div>
+      </div>
+      <div class="sub-block">
+        <h2>Serie de prueba física</h2>
+        <p class="hint">Anota la distancia y la condición, inicia la serie y luego envía la ráfaga de prueba desde el otro equipo.</p>
+        <div class="row">
+          <label class="field" for="serDist">Distancia (m)<input type="number" id="serDist" value="0.5" min="0" step="0.25" style="width: 96px;"></label>
+          <label class="field" for="serCond">Condición
+            <select id="serCond"><option>Silencio</option><option>Ruido de fondo</option><option>Música</option><option>Otra</option></select>
+          </label>
+          <label class="field" for="serN">Esperadas<input type="number" id="serN" value="20" min="1" max="255" style="width: 80px;"></label>
+        </div>
+        <div class="row">
+          <button class="go-rx" id="btnSerStart">Iniciar serie</button>
+          <button id="btnSerEnd" disabled>Terminar serie</button>
+        </div>
+        <p class="hint mono" id="serStatus">Sin serie activa.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Serie</th><th>Distancia</th><th>Condición</th><th>Esperadas</th><th>Correctas</th><th>Error CRC</th><th>Perdidas</th><th>BER datos</th><th>Eb/N0 medio</th></tr></thead>
+        <tbody id="serBody"><tr><td colspan="9" class="empty">Todavía no hay series. Cada serie agrega una fila.</td></tr></tbody>
+      </table>
+    </div>
+    <div class="row">
+      <button id="btnSerCsv">Descargar CSV de series</button>
+      <button id="btnFrameCsv">Descargar CSV por trama</button>
+    </div>
+  </section>
+
+  <section class="panel" id="tab-sim" role="tabpanel" hidden>
+    <div class="panel-grid">
+      <div class="sub-block">
+        <h2>Canal simulado</h2>
+        <p class="hint">El mensaje pasa por un modelo del aire: ruido blanco, eco de la habitación y diferencia de reloj entre tarjetas de sonido. No necesita micrófono.</p>
+        <div class="slider"><div class="top"><label for="simEb">Ruido · Eb/N0</label><span class="mono" id="simEbV"></span></div><input type="range" id="simEb" min="0" max="30" step="1" value="14"></div>
+        <div class="slider"><div class="top"><label for="simRv">Eco de la habitación</label><span class="mono" id="simRvV"></span></div><input type="range" id="simRv" min="0" max="1.5" step="0.1" value="0.5"></div>
+        <div class="slider"><div class="top"><label for="simDr">Diferencia de reloj</label><span class="mono" id="simDrV"></span></div><input type="range" id="simDr" min="0" max="300" step="25" value="50"></div>
+      </div>
+      <div class="sub-block">
+        <div class="row">
+          <label class="field" for="simSpeed">Animación
+            <select id="simSpeed"><option value="1">Tiempo real</option><option value="4" selected>4× más rápido</option><option value="16">16× más rápido</option></select>
+          </label>
+          <label class="follow" style="align-self: end;"><input type="checkbox" id="simListen"> Escuchar el canal</label>
+        </div>
+        <div class="row">
+          <button class="go-tx" id="btnSim">Enviar mensaje por el canal</button>
+          <button id="btnSim10">Enviar 10 tramas de prueba</button>
+          <button id="btnSimStop" disabled>Detener</button>
+        </div>
+        <p class="hint mono" id="simStatus">Mueve los controles y envía un mensaje.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="tab-test" role="tabpanel" hidden>
+    <div class="row" style="justify-content: space-between;">
+      <div style="display: grid; gap: 4px;">
+        <h2>Pruebas de exactitud y robustez</h2>
+        <p class="hint" id="resSource"></p>
+      </div>
+      <div class="row">
+        <button class="go-rx" id="btnSweep">Repetir en este navegador</button>
+        <button id="btnSweepStop" disabled>Detener</button>
+        <button id="btnResCsv">Descargar CSV</button>
+      </div>
+    </div>
+    <div class="progress"><i id="sweepBar"></i></div>
+    <div class="panel-grid">
+      <div class="sub-block">
+        <h2>Probabilidad de error contra Eb/N0</h2>
+        <svg class="chart" id="chartBer" viewBox="0 0 560 360" role="img" aria-label="Curvas de error"></svg>
+        <div class="legend" id="legBer"></div>
+      </div>
+      <div class="sub-block">
+        <h2>Tramas correctas con eco (Eb/N0 = 20 dB)</h2>
+        <svg class="chart" id="chartEcho" viewBox="0 0 460 360" role="img" aria-label="Robustez al eco"></svg>
+        <div class="legend" id="legEcho"></div>
+      </div>
+    </div>
+    <div class="table-wrap"><table><thead id="resHead"></thead><tbody id="resBody"></tbody></table></div>
+  </section>
+
+  <section class="inst" id="instruments">
+    <article class="card span-12">
+      <header><h2>Trama</h2><span class="mono muted" id="stripInfo">Sin trama</span></header>
+      <canvas id="stripCanvas" height="60"></canvas>
+      <div class="legend" id="stripLegend"></div>
+    </article>
+    <article class="card span-7">
+      <header><h2>Espectrograma</h2><span class="mono muted" id="specInfo">1 a 5 kHz</span></header>
+      <div class="spec-wrap"><canvas id="specCanvas"></canvas><div class="spec-axis" id="specAxis"></div></div>
+      <div class="legend"><span>Tiempo →</span><span>Brillo = energía del sonido</span><span id="toneLegend"></span></div>
+    </article>
+    <article class="card span-5">
+      <header><h2>Detector</h2><span class="mono muted" id="detInfo">Esperando señal</span></header>
+      <canvas id="detCanvas"></canvas>
+      <div class="legend">
+        <span><i style="background: var(--rx)"></i>Decisión d = (E1 − E0)/(E1 + E0)</span>
+        <span><i style="background: var(--warn)"></i>Correlación con el patrón</span>
+      </div>
+    </article>
+    <article class="card span-7">
+      <header><h2>Mensajes recibidos</h2><button class="ghost" id="btnClear" style="padding: 6px 10px;">Limpiar</button></header>
+      <ul class="msgs" id="msgs"><li class="empty" style="display: block; border: 0; background: none;">Aquí aparecen los mensajes que decodifica el receptor, con su CRC y su Eb/N0 estimado.</li></ul>
+    </article>
+    <article class="card span-5">
+      <header><h2>Contadores</h2><span class="mono muted" id="cntSrc"></span></header>
+      <div class="counters">
+        <div class="counter ok"><b id="cOk">0</b><span>Tramas correctas</span></div>
+        <div class="counter bad"><b id="cCrc">0</b><span>Con error de CRC</span></div>
+        <div class="counter"><b id="cAb">0</b><span>Sincronías descartadas</span></div>
+        <div class="counter"><b id="cEb">—</b><span>Eb/N0 de la última trama</span></div>
+      </div>
+    </article>
+  </section>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/*__MODEM_JS__*/
+</script>
+<script>
+(function () {
+  'use strict';
+  const M = window.Modem;
+  const REFERENCE = /*__REFERENCE_JSON__*/null;
+  const $ = (id) => document.getElementById(id);
+  const SIM_FS = 48000;
+  const IN_ARTIFACT = !!(window.claude && typeof window.claude.use === 'function');
+
+  const state = {
+    cfg: { mode: 'salto', baud: 100 }, ctx: null, tab: 'tx', seq: 0,
+    active: {}, stage: 'tx-text', lastAuto: 0,
+    strip: null, tx: null, sim: null, mic: null, file: null, visualRx: null,
+    counters: { ok: 0, crc: 0, ab: 0, eb: null },
+    series: null, seriesRows: [], frameLog: [], seriesId: 0,
+    results: REFERENCE ? JSON.parse(JSON.stringify(REFERENCE)) : null, resultsSource: 'ref', sweep: null,
+  };
+
+  // ---------- tokens de color para los lienzos ----------
+  let TOK = null, LUT = null;
+  function tok() {
+    if (!TOK) {
+      const cs = getComputedStyle(document.documentElement); TOK = {};
+      for (const k of ['bg', 'panel', 'board', 'raise', 'line', 'grid', 'fg', 'muted', 'faint', 'tx', 'rx', 'ok', 'warn', 'err', 'f-pre', 'f-sync', 'f-len', 'f-seq', 'f-data', 'f-crc'])
+        TOK[k] = cs.getPropertyValue('--' + k).trim();
+      LUT = null;
+    }
+    return TOK;
+  }
+  const invalidate = () => { TOK = null; stripDirty = true; specClear = true; renderCharts(); };
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', invalidate); } catch (e) { /* navegadores antiguos */ }
+  new MutationObserver(invalidate).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  const hex = (h) => { h = h.replace('#', ''); if (h.length === 3) h = h.split('').map((c) => c + c).join(''); const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+  function lut() {
+    if (LUT) return LUT;
+    const t = tok(), a = hex(t.board), b = hex(t.rx), c = hex(t.fg);
+    LUT = new Uint8ClampedArray(256 * 3);
+    for (let i = 0; i < 256; i++) {
+      const x = i / 255, [p, q, u] = x < 0.6 ? [a, b, x / 0.6] : [b, c, (x - 0.6) / 0.4];
+      for (let j = 0; j < 3; j++) LUT[i * 3 + j] = p[j] + (q[j] - p[j]) * u;
+    }
+    return LUT;
+  }
+
+  // ---------- utilidades ----------
+  let toastTimer = null;
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => (t.hidden = true), 3200); }
+  const fmtExp = (v) => (v === null || v === undefined || Number.isNaN(v) ? '—' : v === 0 ? '0' : v.toExponential(2).replace('e', '×10^'));
+  const fmt1 = (v) => (v === null || v === undefined || Number.isNaN(v) ? '—' : v.toFixed(1));
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+  const now = () => performance.now();
+
+  async function ensureCtx() {
+    if (!state.ctx) {
+      const C = window.AudioContext || window.webkitAudioContext;
+      if (!C) throw new Error('Este navegador no tiene Web Audio');
+      state.ctx = new C();
+    }
+    if (state.ctx.state === 'suspended') await state.ctx.resume();
+    return state.ctx;
+  }
+
+  function crc32(buf) {
+    let c, crc = 0xffffffff;
+    for (let n = 0; n < buf.length; n++) { c = (crc ^ buf[n]) & 0xff; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; crc = (crc >>> 8) ^ c; }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+  function zipOne(name, data) { // ZIP sin compresión con un solo archivo
+    const nb = new TextEncoder().encode(name), d = new Uint8Array(data), crc = crc32(d);
+    const lh = new DataView(new ArrayBuffer(30)), cd = new DataView(new ArrayBuffer(46)), end = new DataView(new ArrayBuffer(22));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint32(14, crc, true); lh.setUint32(18, d.length, true); lh.setUint32(22, d.length, true); lh.setUint16(26, nb.length, true);
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true); cd.setUint32(16, crc, true); cd.setUint32(20, d.length, true); cd.setUint32(24, d.length, true); cd.setUint16(28, nb.length, true);
+    const cdOff = 30 + nb.length + d.length;
+    end.setUint32(0, 0x06054b50, true); end.setUint16(8, 1, true); end.setUint16(10, 1, true); end.setUint32(12, 46 + nb.length, true); end.setUint32(16, cdOff, true);
+    return new Blob([lh, nb, d, cd, nb, end], { type: 'application/zip' });
+  }
+  async function saveFile(filename, data, mime) {
+    const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+    if (IN_ARTIFACT) {
+      try {
+        const dl = await window.claude.use('downloads');
+        if (dl) { await dl.save({ filename, data: blob }); return; }
+      } catch (e) {
+        if (e && e.code === 'declined') return;
+        toast('No se pudo guardar el archivo en esta vista.'); return;
+      }
+    }
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+  }
+  function saveWav(name, x, fs) {
+    const wav = M.encodeWav(x, fs);
+    if (IN_ARTIFACT) saveFile(name.replace(/\.wav$/, '.zip'), zipOne(name, wav), 'application/zip');
+    else saveFile(name, new Blob([wav], { type: 'audio/wav' }), 'audio/wav');
+  }
+
+  // ---------- tablero ----------
+  const BW = 146, BH = 70;
+  const BLOCKS = [
+    { id: 'tx-text', row: 'tx', x: 12, y: 36, lbl: 'Texto' },
+    { id: 'tx-frame', row: 'tx', x: 184, y: 36, lbl: 'Trama' },
+    { id: 'tx-mod', row: 'tx', x: 356, y: 36, lbl: 'Modulador FSK' },
+    { id: 'tx-spk', row: 'tx', x: 528, y: 36, lbl: 'Bocina' },
+    { id: 'rx-mic', row: 'rx', x: 842, y: 176, lbl: 'Micrófono' },
+    { id: 'rx-goertzel', row: 'rx', x: 674, y: 176, lbl: 'Goertzel' },
+    { id: 'rx-sync', row: 'rx', x: 506, y: 176, lbl: 'Sincronía' },
+    { id: 'rx-dec', row: 'rx', x: 338, y: 176, lbl: 'Decisión' },
+    { id: 'rx-crc', row: 'rx', x: 170, y: 176, lbl: 'CRC-16' },
+    { id: 'rx-text', row: 'rx', x: 2, y: 176, lbl: 'Texto' },
+  ];
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const chipEls = {}, traceEls = [];
+  function buildBoard() {
+    const svg = $('board');
+    el('text', { x: 12, y: 22, class: 'row-lbl' }, svg).textContent = 'TRANSMISOR';
+    el('text', { x: 988, y: 262, class: 'row-lbl', 'text-anchor': 'end' }, svg).textContent = 'RECEPTOR';
+    const traceG = el('g', {}, svg);
+    for (let i = 0; i < 3; i++) { const a = BLOCKS[i], b = BLOCKS[i + 1]; traceEls.push({ row: 'tx', from: a.id, to: b.id, e: el('path', { class: 'trace', d: `M${a.x + BW} ${a.y + BH / 2} H${b.x}` }, traceG) }); }
+    for (let i = 4; i < 9; i++) { const a = BLOCKS[i], b = BLOCKS[i + 1]; traceEls.push({ row: 'rx', from: a.id, to: b.id, e: el('path', { class: 'trace', d: `M${a.x} ${a.y + BH / 2} H${b.x + BW}` }, traceG) }); }
+    // aire entre la bocina y el micrófono
+    const air = el('g', { class: 'air', id: 'air' }, svg);
+    const sx = 528 + BW + 8, sy = 36 + BH / 2;
+    for (let i = 0; i < 3; i++) { const r = 18 + i * 14; el('path', { class: 'wave', d: `M${sx + r * 0.5} ${sy - r} A${r} ${r} 0 0 1 ${sx + r * 0.5} ${sy + r}` }, air); }
+    el('path', { class: 'trace', d: `M${sx + 70} ${sy} C ${sx + 160} ${sy}, 915 120, 915 176`, 'stroke-dasharray': '2 8' }, svg);
+    const airLbl = el('text', { x: 812, y: 112, class: 'air-lbl' }, svg); airLbl.id = 'airLbl'; airLbl.textContent = 'aire';
+    for (const b of BLOCKS) {
+      const g = el('g', { class: 'chip ' + b.row, tabindex: '0', role: 'button', 'aria-label': b.lbl }, svg);
+      for (let k = 0; k < 6; k++) { const px = b.x + 18 + k * 22; el('line', { class: 'pin', x1: px, y1: b.y - 6, x2: px, y2: b.y }, g); el('line', { class: 'pin', x1: px, y1: b.y + BH, x2: px, y2: b.y + BH + 6 }, g); }
+      el('rect', { class: 'body', x: b.x, y: b.y, width: BW, height: BH, rx: 7 }, g);
+      el('circle', { class: 'led', cx: b.x + BW - 12, cy: b.y + 12, r: 4.5 }, g);
+      el('text', { class: 'lbl', x: b.x + 12, y: b.y + 30 }, g).textContent = b.lbl;
+      const v = el('text', { class: 'val', x: b.x + 12, y: b.y + 52 }, g);
+      chipEls[b.id] = { g, v };
+      const pick = () => { $('follow').checked = false; showStage(b.id); };
+      g.addEventListener('click', pick);
+      g.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); pick(); } });
+    }
+  }
+  const setVal = (id, s) => { const c = chipEls[id]; if (c && c.v.textContent !== s) c.v.textContent = s; };
+  function pulse(id, ms, delay = 0, cls = 'on') {
+    const t = now() + delay;
+    (state.active[id] = state.active[id] || []).push({ from: t, to: t + ms, cls });
+    if ($('follow').checked && cls === 'on') setTimeout(() => autoStage(id), delay);
+  }
+  function autoStage(id) { if (!$('follow').checked) return; if (now() - state.lastAuto < 900 && id !== state.stage) return; state.lastAuto = now(); showStage(id); }
+
+  // ---------- explicación de cada etapa ----------
+  const pairsText = () => M.cfgOf(state.cfg).pairs.map((p) => p.join('/')).join(', ');
+  const STAGES = {
+    'tx-text': { eb: 'Transmisor · etapa 1 de 4', t: 'Texto a bytes', d: 'El mensaje se codifica en UTF-8: cada letra sin acento ocupa 1 byte y una con acento ocupa 2. Una trama lleva como máximo 120 bytes.', f: '"á" → 0xC3 0xA1', live: () => `<b>${M.textToBytes($('msg').value, 120).length}</b> bytes de datos` },
+    'tx-frame': { eb: 'Transmisor · etapa 2 de 4', t: 'Armado de la trama', d: 'Se agrega un preámbulo 1010… para despertar al receptor, la palabra de sincronía Barker de 13 bits, la longitud, el número de secuencia y un CRC-16 para detectar errores.', f: '16 + 13 + 8 + 8 + 8·L + 16 bits', live: () => { const f = M.encodeText($('msg').value, 0, state.cfg); return `<b>${f.bits.length}</b> bits · ${(f.bits.length / state.cfg.baud).toFixed(2)} s`; } },
+    'tx-mod': { eb: 'Transmisor · etapa 3 de 4', t: 'Modulador FSK', d: 'Cada bit se vuelve un tono que dura T = 1/R. Con salto de frecuencia, el símbolo k usa el par k mod 4, así el eco del símbolo anterior queda en otra frecuencia. La fase es continua para que no haya chasquidos.', f: 's(t) = A·sen(2π·f(k,b)·t + φ)', live: () => `pares: <b>${pairsText()}</b> Hz · T = ${(1000 / state.cfg.baud).toFixed(0)} ms` },
+    'tx-spk': { eb: 'Transmisor · etapa 4 de 4', t: 'Bocina', d: 'La tarjeta de sonido convierte las muestras en sonido. Todo el procesamiento es software: no hay hardware adicional.', f: 'fs = 48 000 muestras/s (o 44 100)', live: () => `fs = <b>${state.ctx ? state.ctx.sampleRate : 48000}</b> Hz` },
+    'air': { eb: 'Canal', t: 'El aire', d: 'El sonido pierde fuerza con la distancia, se mezcla con el ruido de la habitación y rebota en las paredes, lo que produce eco.', f: 'Eb/N0 baja ≈ 6 dB cada vez que se duplica la distancia', live: () => '' },
+    'rx-mic': { eb: 'Receptor · etapa 1 de 6', t: 'Micrófono', d: 'Captura el sonido. Desactivamos la cancelación de eco, la supresión de ruido y el control de ganancia del navegador porque tratan los tonos como ruido.', f: 'getUserMedia({ echoCancellation: false, … })', live: () => (state.visualRx ? `fuente: <b>${state.visualRx.label}</b>` : 'micrófono apagado') },
+    'rx-goertzel': { eb: 'Receptor · etapa 2 de 6', t: 'Filtros de Goertzel', d: 'Cada octavo de símbolo mide la energía de cada tono con el algoritmo de Goertzel: una DFT de un solo punto, mucho más barata que una FFT completa.', f: 'E = s₁² + s₂² − c·s₁·s₂,  c = 2·cos(2πf/fs)', live: () => (state.visualRx ? `ruido estimado: <b>${fmt1(10 * Math.log10(state.visualRx.demod.last.noise + 1e-12))}</b> dB` : '') },
+    'rx-sync': { eb: 'Receptor · etapa 3 de 6', t: 'Sincronía', d: 'Compara las decisiones con el patrón conocido (fin del preámbulo + Barker-13). Si la correlación pasa de 0.65 y la energía está 5 dB arriba del ruido, fija el inicio de la trama.', f: 'C = (1/21)·Σ pₖ·d[m − (20 − k)·8]', live: () => (state.visualRx ? `correlación: <b>${fmt2(state.visualRx.demod.last.corr)}</b>` : '') },
+    'rx-dec': { eb: 'Receptor · etapa 4 de 6', t: 'Decisión de bit', d: 'Detector no coherente: el bit es 1 si la energía del tono del 1 supera a la del 0. Su probabilidad de error teórica en ruido blanco es ½·e^(−Eb/2N0).', f: 'b = 1 si E₁ > E₀;  Pb = ½·exp(−Eb/2N₀)', live: () => (state.visualRx ? `d = <b>${fmt2(state.visualRx.demod.last.d)}</b>` : '') },
+    'rx-crc': { eb: 'Receptor · etapa 5 de 6', t: 'Verificación CRC-16', d: 'Recalcula el CRC-16/CCITT de la longitud, la secuencia y los datos. Si no coincide con el recibido, la trama se marca con error en lugar de mostrar texto equivocado.', f: 'x¹⁶ + x¹² + x⁵ + 1,  valor inicial 0xFFFF', live: () => `correctas <b>${state.counters.ok}</b> · con error <b>${state.counters.crc}</b>` },
+    'rx-text': { eb: 'Receptor · etapa 6 de 6', t: 'Texto recibido', d: 'Los bytes se decodifican como UTF-8 y se muestran con el Eb/N0 estimado: la energía de la señal entre la del ruido medido antes de la trama.', f: 'Eb/N0 ≈ 2·(E_señal+ruido / E_ruido − 1)', live: () => (state.counters.eb !== null ? `última trama: <b>${fmt1(state.counters.eb)}</b> dB` : '') },
+  };
+  const fmt2 = (v) => (typeof v === 'number' ? v.toFixed(2) : '—');
+  function showStage(id) {
+    const s = STAGES[id]; if (!s) return;
+    state.stage = id;
+    $('stEyebrow').textContent = s.eb; $('stTitle').textContent = s.t; $('stText').textContent = s.d; $('stFormula').textContent = s.f;
+    $('stLive').innerHTML = s.live();
+    for (const k in chipEls) chipEls[k].g.classList.toggle('sel', k === id);
+  }
+
+  // ---------- configuración y mensaje ----------
+  function readCfg() { state.cfg = { mode: $('cfgMode').value, baud: +$('cfgBaud').value }; }
+  function updateMsgInfo() {
+    const bytes = M.textToBytes($('msg').value, 1e9).length, f = M.encodeText($('msg').value, 0, state.cfg);
+    const over = bytes > 120 ? ` · se recortará a 120 bytes` : '';
+    $('msgInfo').textContent = `${Math.min(bytes, 120)} / 120 bytes · ${f.bits.length} bits · ${M.frameSeconds(f.len, state.cfg).toFixed(2)} s a ${state.cfg.baud} bit/s${over}`;
+    setVal('tx-text', `${f.len} bytes`); setVal('tx-frame', `${f.bits.length} bits`);
+    setVal('tx-mod', state.cfg.mode === 'salto' ? '8 tonos · salto' : '1800/2400 Hz'); setVal('tx-spk', `${state.cfg.baud} bit/s`);
+    if (!state.strip || state.strip.src === 'idle') setStrip(f.bits, f.fields, 'idle', f.bits.length, 0, f);
+  }
+  function onCfgChange() {
+    readCfg(); stopSim(); stopTx();
+    if (state.mic) state.mic.rx = makeReceiver(state.mic.rx.fs, 'micrófono');
+    state.visualRx = state.mic ? state.mic.rx : null;
+    updateMsgInfo(); updateToneLegend(); showStage(state.stage);
+    toast('Configuración cambiada: usa la misma en los dos equipos.');
+  }
+
+  // ---------- trama en pantalla ----------
+  let stripDirty = true;
+  function setStrip(bits, fields, src, known, cursor, frame) {
+    state.strip = { bits: bits.slice(), fields, src, known: known ?? bits.length, cursor: cursor ?? -1, frame };
+    stripDirty = true;
+    const lg = $('stripLegend'); lg.innerHTML = '';
+    const col = { preamble: 'f-pre', sync: 'f-sync', length: 'f-len', seq: 'f-seq', payload: 'f-data', crc: 'f-crc' };
+    for (const f of fields) {
+      const s = document.createElement('span');
+      s.innerHTML = `<i style="background: var(--${col[f.name]})"></i>${f.label} · ${f.end - f.start} bits`;
+      lg.appendChild(s);
+    }
+    const tag = src === 'tx' ? 'Transmitiendo' : src === 'rx' ? 'Recibiendo' : 'Vista previa';
+    $('stripInfo').textContent = `${tag} · ${bits.length} bits` + (frame && frame.seq !== undefined ? ` · secuencia ${frame.seq}` : '');
+  }
+  function rxFields(len) {
+    const pb = M.DEFAULTS.preambleBits, out = [], add = (name, n) => { const s = out.length ? out[out.length - 1].end : 0; out.push({ name, label: M.FIELD_NAMES[name], start: s, end: s + n }); };
+    add('preamble', pb); add('sync', 13); add('length', 8); add('seq', 8);
+    if (len !== null) { add('payload', 8 * len); add('crc', 16); }
+    return out;
+  }
+  function drawStrip() {
+    const cv = $('stripCanvas'), st = state.strip; if (!st || !stripDirty) return;
+    stripDirty = false;
+    const t = tok(), dpr = window.devicePixelRatio || 1, W = cv.clientWidth;
+    const cell = W < 600 ? 7 : 9, gap = 2, per = Math.max(8, Math.floor((W + gap) / (cell + gap)));
+    const rows = Math.max(1, Math.ceil(st.fields[st.fields.length - 1].end / per));
+    const H = rows * (cell + gap);
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + 'px'; }
+    const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    const col = { preamble: t['f-pre'], sync: t['f-sync'], length: t['f-len'], seq: t['f-seq'], payload: t['f-data'], crc: t['f-crc'] };
+    const total = st.fields[st.fields.length - 1].end;
+    for (const f of st.fields) for (let i = f.start; i < f.end; i++) {
+      const x = (i % per) * (cell + gap), y = Math.floor(i / per) * (cell + gap);
+      if (i >= st.known) { g.strokeStyle = t.line; g.lineWidth = 1; g.strokeRect(x + 0.5, y + 0.5, cell - 1, cell - 1); continue; }
+      const b = st.bits[i];
+      g.fillStyle = col[f.name];
+      g.globalAlpha = st.src === 'tx' && st.cursor >= 0 && i > st.cursor ? 0.3 : 1;
+      if (b) g.fillRect(x, y, cell, cell); else { g.lineWidth = 1.6; g.strokeStyle = col[f.name]; g.strokeRect(x + 1, y + 1, cell - 2, cell - 2); }
+      g.globalAlpha = 1;
+    }
+    if (st.cursor >= 0 && st.cursor < total) {
+      const i = st.cursor, x = (i % per) * (cell + gap), y = Math.floor(i / per) * (cell + gap);
+      g.strokeStyle = t.fg; g.lineWidth = 2; g.strokeRect(x - 1.5, y - 1.5, cell + 3, cell + 3);
+    }
+  }
+
+  // ---------- espectrograma ----------
+  const FFT_N = 512, FFT_HOP = 512; // ventana ≈ 1 símbolo a 100 bit/s: se ve el salto entre pares de tonos
+  const fftTw = (() => { const c = new Float64Array(FFT_N / 2), s = new Float64Array(FFT_N / 2); for (let i = 0; i < FFT_N / 2; i++) { c[i] = Math.cos((2 * Math.PI * i) / FFT_N); s[i] = -Math.sin((2 * Math.PI * i) / FFT_N); } return { c, s }; })();
+  const hann = (() => { const w = new Float64Array(FFT_N); for (let i = 0; i < FFT_N; i++) w[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (FFT_N - 1)); return w; })();
+  function fft(re, im) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) { let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit; if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; } }
+    for (let len = 2; len <= n; len <<= 1) {
+      const step = n / len;
+      for (let i = 0; i < n; i += len) for (let k = 0; k < len / 2; k++) {
+        const wr = fftTw.c[k * step], wi = fftTw.s[k * step], a = i + k, b = a + len / 2;
+        const xr = re[b] * wr - im[b] * wi, xi = re[b] * wi + im[b] * wr;
+        re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
+      }
+    }
+  }
+  const SPEC_F0 = 1000, SPEC_F1 = 5000;
+  let specQueue = [], specClear = true, specRef = -40;
+  class SpecFeeder {
+    constructor(fs) { this.fs = fs; this.buf = new Float32Array(FFT_N); this.w = 0; this.since = 0; this.re = new Float64Array(FFT_N); this.im = new Float64Array(FFT_N); }
+    push(x) {
+      const mk = FFT_N - 1;
+      for (let i = 0; i < x.length; i++) {
+        this.buf[this.w] = x[i]; this.w = (this.w + 1) & mk;
+        if (++this.since >= FFT_HOP) { this.since = 0; this.column(); }
+      }
+    }
+    column() {
+      if (this !== (state.visualRx && state.visualRx.spec)) return;
+      for (let i = 0; i < FFT_N; i++) { this.re[i] = this.buf[(this.w + i) & (FFT_N - 1)] * hann[i]; this.im[i] = 0; }
+      fft(this.re, this.im);
+      const k0 = Math.floor((SPEC_F0 * FFT_N) / this.fs), k1 = Math.ceil((SPEC_F1 * FFT_N) / this.fs);
+      const col = new Float32Array(k1 - k0 + 1);
+      for (let k = k0; k <= k1; k++) col[k - k0] = 10 * Math.log10(this.re[k] * this.re[k] + this.im[k] * this.im[k] + 1e-12);
+      specQueue.push(col); if (specQueue.length > 1200) specQueue.shift();
+    }
+  }
+  function drawSpec() {
+    const cv = $('specCanvas'), dpr = window.devicePixelRatio || 1, W = Math.round(cv.clientWidth * dpr), H = Math.round(cv.clientHeight * dpr);
+    if (!W || !H) return;
+    const g = cv.getContext('2d');
+    if (cv.width !== W || cv.height !== H || specClear) { cv.width = W; cv.height = H; g.fillStyle = tok().board; g.fillRect(0, 0, W, H); specClear = false; }
+    if (!specQueue.length) return;
+    const cw = Math.max(1, Math.round(dpr)), n = specQueue.length, L = lut();
+    g.drawImage(cv, -n * cw, 0);
+    const img = g.createImageData(cw, H);
+    specQueue.forEach((col, ci) => {
+      let mx = -200; for (const v of col) if (v > mx) mx = v;
+      specRef = Math.max(specRef - 0.05, mx);
+      for (let y = 0; y < H; y++) {
+        const f = SPEC_F1 - (y / H) * (SPEC_F1 - SPEC_F0), idx = Math.min(col.length - 1, Math.max(0, Math.round(((f - SPEC_F0) / (SPEC_F1 - SPEC_F0)) * (col.length - 1))));
+        const u = Math.max(0, Math.min(1, (col[idx] - (specRef - 42)) / 42)), v = Math.round(Math.pow(u, 1.8) * 255);
+        for (let xx = 0; xx < cw; xx++) { const o = (y * cw + xx) * 4; img.data[o] = L[v * 3]; img.data[o + 1] = L[v * 3 + 1]; img.data[o + 2] = L[v * 3 + 2]; img.data[o + 3] = 255; }
+      }
+      g.putImageData(img, W - (n - ci) * cw, 0);
+    });
+    specQueue = [];
+  }
+  function buildSpecAxis() {
+    const ax = $('specAxis'); ax.innerHTML = '';
+    for (let f = 1000; f <= 5000; f += 1000) { const s = document.createElement('span'); s.style.top = ((SPEC_F1 - f) / (SPEC_F1 - SPEC_F0)) * 100 + '%'; s.textContent = f / 1000 + ' kHz'; if (f === 5000) s.style.transform = 'translateY(0)'; if (f === 1000) s.style.transform = 'translateY(-100%)'; ax.appendChild(s); }
+  }
+  function updateToneLegend() { $('toneLegend').textContent = 'Tonos: ' + pairsText() + ' Hz'; }
+
+  // ---------- detector ----------
+  const TR = 900, trace = { d: new Float32Array(TR), c: new Float32Array(TR), s: new Uint8Array(TR), i: 0, n: 0 };
+  let lastP = null, lastPair = 0, hopCount = 0;
+  function drawDet() {
+    const cv = $('detCanvas'), dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+    if (!W) return;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const g = cv.getContext('2d'), t = tok(); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    // barras de energía por tono
+    const cfg = M.cfgOf(state.cfg), tones = [], barsH = 82;
+    cfg.pairs.forEach((p, j) => p.forEach((f, b) => tones.push({ f, j, b })));
+    const bw = Math.min(46, (W - 8) / tones.length - 6);
+    const rx = state.visualRx, noise = rx ? rx.demod.last.noise / 2 : 1;
+    g.font = '10px "JetBrains Mono", ui-monospace, monospace';
+    tones.forEach((tn, i) => {
+      const x = 4 + i * (bw + 6);
+      const p = lastP && rx ? lastP[2 * tn.j + tn.b] : 0, db = p > 0 ? 10 * Math.log10(p / Math.max(noise, 1e-12)) : 0;
+      const h = Math.max(0, Math.min(1, db / 40)) * (barsH - 22);
+      g.fillStyle = t.raise; g.fillRect(x, 4, bw, barsH - 22);
+      g.fillStyle = tn.j === lastPair ? (tn.b ? t.rx : t.tx) : t.faint;
+      g.fillRect(x, 4 + (barsH - 22) - h, bw, h);
+      g.fillStyle = t.muted; g.textAlign = 'center'; g.fillText(tn.f >= 1000 ? (tn.f / 1000).toFixed(1) : tn.f, x + bw / 2, barsH - 6);
+    });
+    g.textAlign = 'left';
+    // trazas
+    const y0 = barsH + 8, h = H - y0 - 4, mid = y0 + h / 2, sy = (v) => mid - v * (h / 2 - 4);
+    g.strokeStyle = t.line; g.lineWidth = 1; g.strokeRect(0.5, y0 + 0.5, W - 1, h - 1);
+    g.setLineDash([4, 4]); g.beginPath(); g.moveTo(0, sy(0.65)); g.lineTo(W, sy(0.65)); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(0, mid); g.lineTo(W, mid); g.stroke();
+    const n = Math.min(trace.n, TR), dx = W / TR;
+    for (let k = 0; k < n; k++) { const i = (trace.i - n + k + TR) % TR; if (trace.s[i]) { g.fillStyle = t.grid; g.fillRect((TR - n + k) * dx, y0 + 1, dx + 0.5, h - 2); } }
+    const line = (arr, color) => { g.strokeStyle = color; g.lineWidth = 1.5; g.beginPath(); for (let k = 0; k < n; k++) { const i = (trace.i - n + k + TR) % TR, x = (TR - n + k) * dx, y = sy(arr[i]); if (k) g.lineTo(x, y); else g.moveTo(x, y); } g.stroke(); };
+    line(trace.c, t.warn); line(trace.d, t.rx);
+    g.fillStyle = t.muted; g.fillText('+1', 4, y0 + 12); g.fillText('−1', 4, y0 + h - 5); g.fillText('umbral 0.65', W - 72, sy(0.65) - 4);
+  }
+
+  // ---------- receptor (micrófono, simulación o grabación) ----------
+  function makeReceiver(fs, label) {
+    const rx = { fs, label, frameBits: null };
+    rx.spec = new SpecFeeder(fs);
+    rx.demod = new M.Demodulator(fs, state.cfg, {
+      onHop: (L, st) => {
+        if (rx !== state.visualRx) return;
+        if (++hopCount % 2 === 0) { trace.d[trace.i] = L.d; trace.c[trace.i] = st === 'search' ? L.corr : 1; trace.s[trace.i] = st === 'data' ? 1 : 0; trace.i = (trace.i + 1) % TR; trace.n++; }
+        lastP = L.p; lastPair = L.pair;
+        if (st === 'search' && L.corr > 0.35) chipEls['rx-sync'].g.classList.add('search');
+      },
+      onSync: (s) => {
+        if (rx !== state.visualRx) return;
+        rx.frameBits = [];
+        const pre = M.preamble(M.DEFAULTS.preambleBits).concat(M.BARKER13);
+        setStrip(pre, rxFields(null), 'rx', pre.length, pre.length - 1, null);
+        pulse('rx-sync', 500); setVal('rx-sync', `C = ${s.corr.toFixed(2)}`);
+        $('detInfo').textContent = `Trama detectada · Eb/N0 ≈ ${fmt1(s.ebn0Db)} dB`;
+      },
+      onHeader: (hd) => {
+        if (rx !== state.visualRx || !state.strip) return;
+        const fields = rxFields(hd.len);
+        state.strip.fields = fields; state.strip.frame = { seq: hd.seq }; stripDirty = true;
+        setStrip(state.strip.bits, fields, 'rx', state.strip.known, state.strip.cursor, { seq: hd.seq });
+      },
+      onBit: (b) => {
+        if (rx !== state.visualRx || !state.strip) return;
+        const st = state.strip, pos = M.DEFAULTS.preambleBits + 13 + b.index;
+        st.bits[pos] = b.bit; st.known = pos + 1; st.cursor = pos; stripDirty = true;
+        pulse('rx-dec', 120); setVal('rx-dec', `bit ${b.index + 1}: ${b.bit}`);
+      },
+      onFrame: (f) => handleFrame(f, rx),
+      onAbort: (a) => { state.counters.ab++; updateCounters(); if (rx === state.visualRx) $('detInfo').textContent = 'Sincronía descartada: ' + a.reason.toLowerCase(); },
+    });
+    rx.feed = (x) => { rx.demod.push(x); rx.spec.push(x); };
+    return rx;
+  }
+
+  function handleFrame(f, rx) {
+    state.counters[f.ok ? 'ok' : 'crc']++; state.counters.eb = f.ebn0Db;
+    updateCounters();
+    if (rx === state.visualRx) {
+      pulse('rx-crc', 900, 0, f.ok ? 'okflash' : 'errflash'); pulse('rx-crc', 700); pulse('rx-text', 1100, 150);
+      setVal('rx-crc', f.ok ? 'CRC correcto' : 'CRC con error'); setVal('rx-text', f.ok ? `"${f.text.slice(0, 14)}${f.text.length > 14 ? '…' : ''}"` : '—');
+      $('detInfo').textContent = (f.ok ? 'Trama correcta' : 'Trama con error') + ` · Eb/N0 ≈ ${fmt1(f.ebn0Db)} dB`;
+      $('stripInfo').textContent = `${f.ok ? 'Recibida' : 'Recibida con error'} · ${M.DEFAULTS.preambleBits + 13 + f.bits.length} bits · secuencia ${f.seq}`;
+      if (state.strip) { state.strip.cursor = -1; stripDirty = true; }
+    }
+    addMessage(f, rx.label);
+    // series de prueba física (solo micrófono o grabación)
+    if (state.series && (rx.label === 'micrófono' || rx.label === 'grabación')) {
+      const s = state.series, pl = f.len === 32 ? M.testPayload(f.seq, 32) : null, be = pl ? M.bitErrors(f.payload, pl) : null;
+      const rec = { serie: s.id, distancia_m: s.dist, condicion: s.cond, modo: state.cfg.mode, baud: state.cfg.baud, seq: f.seq, crc_ok: f.ok ? 1 : 0, bits_erroneos: be, bits_datos: pl ? 256 : null, ebn0_db: +f.ebn0Db.toFixed(2), correlacion: +f.corr.toFixed(3), hora: new Date().toISOString() };
+      state.frameLog.push(rec);
+      if (f.seq < s.n && !s.got.has(f.seq)) s.got.set(f.seq, rec);
+      updateSeriesStatus();
+    }
+  }
+  function updateCounters() {
+    $('cOk').textContent = state.counters.ok; $('cCrc').textContent = state.counters.crc; $('cAb').textContent = state.counters.ab;
+    $('cEb').textContent = state.counters.eb === null ? '—' : fmt1(state.counters.eb) + ' dB';
+  }
+  function addMessage(f, src) {
+    const ul = $('msgs'); if (ul.querySelector('.empty')) ul.innerHTML = '';
+    const li = document.createElement('li');
+    const badge = document.createElement('span'); badge.className = 'badge ' + (f.ok ? 'ok' : 'bad'); badge.textContent = f.ok ? 'CRC ✓' : 'CRC ✗';
+    const txt = document.createElement('span'); txt.className = 'txt' + (f.ok ? '' : ' bad'); txt.textContent = f.text || '(vacío)';
+    const meta = document.createElement('span'); meta.className = 'meta';
+    meta.textContent = `${new Date().toLocaleTimeString()} · ${src} · sec ${f.seq} · ${f.len} B · Eb/N0 ≈ ${fmt1(f.ebn0Db)} dB · confianza ${Math.round(f.meanConfidence * 100)} %`;
+    li.append(badge, txt, meta); ul.prepend(li);
+    while (ul.children.length > 60) ul.lastChild.remove();
+  }
+
+  // ---------- transmisión ----------
+  function stopTx() { if (state.tx) { try { state.tx.src.stop(); } catch (e) { /* ya terminó */ } state.tx = null; } $('btnStopTx').disabled = true; $('btnTx').disabled = false; $('btnBurst').disabled = false; }
+  function playFrames(frames, gapS, label) {
+    const ctx = state.ctx, fs = ctx.sampleRate, parts = [], meta = [];
+    let off = Math.round(0.15 * fs);
+    for (const fr of frames) { const w = M.modulate(fr.bits, fs, state.cfg); meta.push({ frame: fr, start: off, len: w.length }); parts.push({ w, off }); off += w.length + Math.round(gapS * fs); }
+    const x = new Float32Array(off); for (const p of parts) x.set(p.w, p.off);
+    stopTx();
+    const buf = ctx.createBuffer(1, x.length, fs); buf.copyToChannel(x, 0);
+    const src = ctx.createBufferSource(); src.buffer = buf; src.connect(ctx.destination);
+    const t0 = ctx.currentTime + 0.05; src.start(t0);
+    state.tx = { src, t0, fs, meta, dur: x.length / fs, label, curFrame: -1 };
+    src.onended = () => { if (state.tx && state.tx.src === src) { state.tx = null; $('txStatus').textContent = 'Transmisión terminada.'; $('btnStopTx').disabled = true; $('btnTx').disabled = false; $('btnBurst').disabled = false; $('burstBar').style.width = '0'; } };
+    $('btnStopTx').disabled = false; $('btnTx').disabled = true; $('btnBurst').disabled = true;
+    pulse('tx-text', 350); pulse('tx-frame', 350, 200);
+    return x;
+  }
+  async function transmit() {
+    try { await ensureCtx(); } catch (e) { toast(e.message); return; }
+    const fr = M.encodeText($('msg').value, state.seq++ & 255, state.cfg);
+    playFrames([fr], 0.3, 'mensaje');
+    $('txStatus').textContent = `Transmitiendo ${fr.len} bytes (secuencia ${fr.seq}) · ${M.frameSeconds(fr.len, state.cfg).toFixed(2)} s`;
+  }
+  async function burst() {
+    try { await ensureCtx(); } catch (e) { toast(e.message); return; }
+    const n = +$('burstN').value, frames = [];
+    for (let s = 0; s < n; s++) frames.push(M.buildFrame(M.testPayload(s, 32), s, state.cfg));
+    playFrames(frames, 0.7, 'ráfaga');
+    $('txStatus').textContent = `Ráfaga de ${n} tramas · ${(n * (M.frameSeconds(32, state.cfg) + 0.7)).toFixed(0)} s en total`;
+  }
+  async function downloadWav() {
+    const fs = state.ctx ? state.ctx.sampleRate : 48000;
+    const fr = M.encodeText($('msg').value, 0, state.cfg), w = M.modulate(fr.bits, fs, state.cfg);
+    const x = new Float32Array(w.length + Math.round(0.6 * fs)); x.set(w, Math.round(0.3 * fs));
+    saveWav(`modem_fsk_${state.cfg.mode}_${state.cfg.baud}.wav`, x, fs);
+  }
+  function txProgress() {
+    const tx = state.tx; if (!tx) return;
+    const s = (state.ctx.currentTime - tx.t0) * tx.fs, sps = tx.fs / state.cfg.baud;
+    const k = tx.meta.findIndex((m) => s >= m.start && s < m.start + m.len);
+    document.getElementById('air').classList.toggle('on', k >= 0);
+    if (k >= 0) {
+      const m = tx.meta[k], bit = Math.min(m.frame.bits.length - 1, Math.floor((s - m.start) / sps));
+      if (k !== tx.curFrame) { tx.curFrame = k; setStrip(m.frame.bits, m.frame.fields, 'tx', m.frame.bits.length, bit, m.frame); }
+      if (state.strip && state.strip.src === 'tx' && state.strip.cursor !== bit) { state.strip.cursor = bit; stripDirty = true; }
+      markActive('tx-mod'); markActive('tx-spk'); flowRow('tx', true);
+      const pair = M.pairOf(M.cfgOf(state.cfg), bit), b = m.frame.bits[bit] ?? 1;
+      setVal('tx-spk', `${pair[b]} Hz`); autoStage('tx-mod');
+      if (tx.label === 'ráfaga') { $('burstBar').style.width = ((k + 1) / tx.meta.length) * 100 + '%'; $('txStatus').textContent = `Ráfaga: trama ${k + 1} de ${tx.meta.length}`; }
+    }
+  }
+
+  // ---------- micrófono ----------
+  const WORKLET_SRC = `class CapturaModem extends AudioWorkletProcessor {
+    constructor() { super(); this.b = new Float32Array(1024); this.n = 0; }
+    process(inputs) {
+      const ch = inputs[0] && inputs[0][0];
+      if (ch) for (let i = 0; i < ch.length; i++) { this.b[this.n++] = ch[i]; if (this.n === this.b.length) { this.port.postMessage(this.b, [this.b.buffer]); this.b = new Float32Array(1024); this.n = 0; } }
+      return true;
+    }
+  }
+  registerProcessor('captura-modem', CapturaModem);`;
+  function micBlocked(err) {
+    const box = $('micBlocked'); box.hidden = false;
+    $('micPill').textContent = 'Bloqueado'; $('micPill').className = 'pill bad';
+    box.textContent = IN_ARTIFACT
+      ? 'Esta vista no permite usar el micrófono. Para recibir en vivo abre el archivo modem_acustico.html en Chrome (en la computadora) y permite el micrófono. Aquí puedes analizar una grabación hecha con el celular.'
+      : 'El navegador no dio acceso al micrófono (' + (err && err.name ? err.name : 'sin permiso') + '). Revisa el permiso del sitio en la barra de direcciones; en celular la página debe abrirse desde https.';
+  }
+  async function startMic() {
+    let ctx; try { ctx = await ensureCtx(); } catch (e) { toast(e.message); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { micBlocked(null); return; }
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } }); }
+    catch (e) { micBlocked(e); return; }
+    $('micBlocked').hidden = true;
+    const src = ctx.createMediaStreamSource(stream), sink = ctx.createGain(); sink.gain.value = 0;
+    const mic = { stream, src, sink, proc: null, rx: makeReceiver(ctx.sampleRate, 'micrófono') };
+    // AudioWorklet copia las muestras en el hilo de audio y las encola: no se pierden bloques aunque la página esté ocupada
+    try {
+      if (!ctx.audioWorklet) throw new Error('sin AudioWorklet');
+      if (!state.workletReady) { // blob: falla en archivos locales (origen nulo); data: funciona en ambos casos
+        try { await ctx.audioWorklet.addModule('data:application/javascript;charset=utf-8,' + encodeURIComponent(WORKLET_SRC)); }
+        catch (e1) { await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' }))); }
+        state.workletReady = true;
+      }
+      mic.proc = new AudioWorkletNode(ctx, 'captura-modem', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+      mic.proc.port.onmessage = (ev) => mic.rx.feed(ev.data);
+    } catch (e) { // respaldo para navegadores sin AudioWorklet
+      mic.proc = ctx.createScriptProcessor(2048, 1, 1);
+      mic.proc.onaudioprocess = (ev) => mic.rx.feed(new Float32Array(ev.inputBuffer.getChannelData(0)));
+    }
+    src.connect(mic.proc); mic.proc.connect(sink); sink.connect(ctx.destination);
+    state.mic = mic; stopSim(); state.visualRx = mic.rx; specClear = true;
+    $('micPill').textContent = 'Escuchando'; $('micPill').className = 'pill live';
+    $('btnMic').disabled = true; $('btnMicStop').disabled = false;
+    setVal('rx-mic', `${ctx.sampleRate} Hz`);
+    $('cntSrc').textContent = 'micrófono';
+  }
+  function stopMic() {
+    const m = state.mic; if (!m) return;
+    if (m.proc.port) m.proc.port.onmessage = null; else m.proc.onaudioprocess = null;
+    try { m.src.disconnect(); m.proc.disconnect(); m.sink.disconnect(); } catch (e) { /* ya desconectado */ }
+    m.stream.getTracks().forEach((t) => t.stop());
+    if (state.visualRx === m.rx) state.visualRx = null;
+    state.mic = null; $('micPill').textContent = 'Apagado'; $('micPill').className = 'pill';
+    $('btnMic').disabled = false; $('btnMicStop').disabled = true;
+  }
+
+  // ---------- reproducción acelerada (simulación y grabaciones) ----------
+  function stopSim() {
+    const s = state.sim; if (!s) return;
+    if (s.src) { try { s.src.stop(); } catch (e) { /* ya terminó */ } }
+    state.sim = null; $('btnSimStop').disabled = true; $('btnSim').disabled = false; $('btnSim10').disabled = false;
+    if (state.mic) state.visualRx = state.mic.rx;
+  }
+  async function startPlayback(signal, fs, label, opts) {
+    stopSim();
+    const rx = makeReceiver(fs, label);
+    const s = { signal, fs, pos: 0, rx, speed: opts.speed, t0: now(), meta: opts.meta || null, lead: opts.lead || 0, label, src: null, onDone: opts.onDone };
+    if (opts.listen) {
+      const ctx = await ensureCtx();
+      let peak = 1e-9; for (let i = 0; i < signal.length; i++) peak = Math.max(peak, Math.abs(signal[i]));
+      const y = new Float32Array(signal.length), g = 0.9 / peak; for (let i = 0; i < y.length; i++) y[i] = signal[i] * g;
+      const buf = ctx.createBuffer(1, y.length, fs); buf.copyToChannel(y, 0);
+      s.src = ctx.createBufferSource(); s.src.buffer = buf; s.src.connect(ctx.destination); s.ctxT0 = ctx.currentTime + 0.05; s.src.start(s.ctxT0); s.speed = 1;
+    }
+    state.sim = s; state.visualRx = rx; specClear = true; trace.n = 0; s.curFrame = -1;
+    $('btnSimStop').disabled = false; $('btnSim').disabled = true; $('btnSim10').disabled = true;
+    $('cntSrc').textContent = label;
+  }
+  function simProgress() {
+    const s = state.sim; if (!s) return;
+    const elapsed = s.src ? state.ctx.currentTime - s.ctxT0 : ((now() - s.t0) / 1000) * s.speed;
+    const target = Math.min(s.signal.length, Math.max(0, Math.floor(elapsed * s.fs)));
+    while (s.pos < target) { const e = Math.min(target, s.pos + 4096); s.rx.feed(s.signal.subarray(s.pos, e)); s.pos = e; }
+    markActive('rx-mic'); markActive('rx-goertzel'); flowRow('rx', true);
+    document.getElementById('air').classList.add('on');
+    if (s.meta) { // avance del transmisor dentro de la señal simulada
+      const t = s.pos - s.lead, sps = s.fs / state.cfg.baud, k = s.meta.findIndex((m) => t >= m.start && t < m.start + m.len);
+      if (k >= 0) {
+        const m = s.meta[k], bit = Math.min(m.frame.bits.length - 1, Math.floor((t - m.start) / sps));
+        markActive('tx-mod'); markActive('tx-spk'); flowRow('tx', true);
+        if (k !== s.curFrame) { s.curFrame = k; pulse('tx-text', 300); pulse('tx-frame', 300, 150); }
+        const b = m.frame.bits[bit] ?? 1; setVal('tx-spk', `${M.pairOf(M.cfgOf(state.cfg), bit)[b]} Hz`);
+      }
+    }
+    const pct = Math.round((s.pos / s.signal.length) * 100);
+    if (s.label === 'simulado') $('simStatus').textContent = `Canal simulado · ${pct} % · ${(s.pos / s.fs).toFixed(1)} s de ${(s.signal.length / s.fs).toFixed(1)} s`;
+    if (s.pos >= s.signal.length) { const done = s.onDone; stopSim(); if (done) done(); }
+  }
+  function simInputs() { return { ebn0Db: +$('simEb').value, reverb: +$('simRv').value, driftPpm: +$('simDr').value }; }
+  function updateSimLabels() {
+    const v = simInputs(), snr = M.snrFromEbN0(v.ebn0Db, SIM_FS, state.cfg);
+    $('simEbV').textContent = `${v.ebn0Db} dB (SNR en banda completa ${snr.toFixed(1)} dB)`;
+    $('simRvV').textContent = v.reverb === 0 ? 'sin eco' : v.reverb.toFixed(1);
+    $('simDrV').textContent = `${v.driftPpm} ppm`;
+    $('airLbl').textContent = state.sim && state.sim.label === 'simulado' ? `Eb/N0 ${v.ebn0Db} dB · eco ${v.reverb}` : 'aire';
+  }
+  async function runSim(test) {
+    const v = simInputs(), frames = [];
+    if (test) for (let s = 0; s < 10; s++) frames.push(M.buildFrame(M.testPayload(s, 32), s, state.cfg));
+    else frames.push(M.encodeText($('msg').value, state.seq++ & 255, state.cfg));
+    const parts = [], meta = []; let off = 0;
+    for (const fr of frames) { const w = M.modulate(fr.bits, SIM_FS, state.cfg); meta.push({ frame: fr, start: off, len: w.length }); parts.push({ w, off }); off += w.length + Math.round(0.4 * SIM_FS); }
+    const x = new Float32Array(off); for (const p of parts) x.set(p.w, p.off);
+    const ch = M.channel(x, SIM_FS, state.cfg, Object.assign({ seed: (Math.random() * 1e9) | 0, leadMs: 500, tailMs: 400 }, v));
+    await startPlayback(ch.signal, SIM_FS, 'simulado', { speed: +$('simSpeed').value, listen: $('simListen').checked, meta, lead: ch.lead,
+      onDone: () => { $('simStatus').textContent = `Terminado. Correctas ${state.counters.ok}, con error ${state.counters.crc} (contadores acumulados).`; } });
+    updateSimLabels();
+  }
+  async function analyzeFile(file) {
+    if (!file) return;
+    let ctx; try { ctx = await ensureCtx(); } catch (e) { toast(e.message); return; }
+    try {
+      const ab = await file.arrayBuffer(), audio = await ctx.decodeAudioData(ab);
+      const ch0 = audio.getChannelData(0), x = new Float32Array(ch0.length);
+      for (let c = 0; c < audio.numberOfChannels; c++) { const d = audio.getChannelData(c); for (let i = 0; i < x.length; i++) x[i] += d[i] / audio.numberOfChannels; }
+      const pad = new Float32Array(x.length + Math.round(0.5 * audio.sampleRate)); pad.set(x, 0);
+      await startPlayback(pad, audio.sampleRate, 'grabación', { speed: 8, listen: false, onDone: () => toast('Grabación analizada.') });
+      toast(`Analizando ${file.name} (${audio.duration.toFixed(1)} s)`);
+    } catch (e) { toast('No se pudo leer el audio: ' + (e.message || e)); }
+  }
+
+  // ---------- series de prueba física ----------
+  function startSeries() {
+    state.seriesId++;
+    state.series = { id: state.seriesId, dist: +$('serDist').value, cond: $('serCond').value, n: +$('serN').value, got: new Map(), t: Date.now() };
+    $('btnSerStart').disabled = true; $('btnSerEnd').disabled = false; updateSeriesStatus();
+    if (!state.mic) toast('Activa el micrófono o analiza una grabación para contar las tramas.');
+  }
+  function updateSeriesStatus() {
+    const s = state.series; if (!s) { $('serStatus').textContent = 'Sin serie activa.'; return; }
+    const recs = [...s.got.values()], ok = recs.filter((r) => r.crc_ok).length;
+    $('serStatus').textContent = `Serie ${s.id} · ${s.dist} m · ${s.cond} · recibidas ${recs.length} de ${s.n} · correctas ${ok}`;
+  }
+  function endSeries() {
+    const s = state.series; if (!s) return;
+    const recs = [...s.got.values()], ok = recs.filter((r) => r.crc_ok).length, crc = recs.length - ok;
+    let be = 0, bn = 0, eb = 0; for (const r of recs) { if (r.bits_erroneos !== null) { be += r.bits_erroneos; bn += r.bits_datos; } eb += r.ebn0_db; }
+    state.seriesRows.push({ serie: s.id, distancia_m: s.dist, condicion: s.cond, modo: state.cfg.mode, baud: state.cfg.baud, esperadas: s.n, correctas: ok, error_crc: crc, perdidas: s.n - recs.length, ber_datos: bn ? be / bn : null, ebn0_medio_db: recs.length ? eb / recs.length : null });
+    state.series = null; $('btnSerStart').disabled = false; $('btnSerEnd').disabled = true; updateSeriesStatus(); renderSeries();
+  }
+  function renderSeries() {
+    const tb = $('serBody');
+    if (!state.seriesRows.length) return;
+    tb.innerHTML = state.seriesRows.map((r) => `<tr><td>${r.serie}</td><td>${r.distancia_m} m</td><td>${r.condicion}</td><td>${r.esperadas}</td><td>${r.correctas}</td><td>${r.error_crc}</td><td>${r.perdidas}</td><td>${fmtExp(r.ber_datos)}</td><td>${fmt1(r.ebn0_medio_db)} dB</td></tr>`).join('');
+  }
+  const toCsv = (rows) => { if (!rows.length) return ''; const k = Object.keys(rows[0]); return k.join(',') + '\n' + rows.map((r) => k.map((c) => (r[c] === null || r[c] === undefined ? '' : String(r[c]).includes(',') ? `"${r[c]}"` : r[c])).join(',')).join('\n') + '\n'; };
+
+  // ---------- pruebas: gráficas ----------
+  function renderCharts() {
+    const R = state.results; if (!R) return;
+    const t = tok();
+    // probabilidad de error
+    const svg = $('chartBer'), W = 560, H = 360, ml = 58, mr = 14, mt = 14, mb = 44, pw = W - ml - mr, ph = H - mt - mb;
+    const xmax = 20, ymin = -5, X = (v) => ml + (v / xmax) * pw, Y = (p) => mt + (Math.log10(p) / ymin) * ph;
+    let s = '';
+    for (let e = 0; e >= ymin; e--) { s += `<line class="gridl" x1="${ml}" x2="${ml + pw}" y1="${Y(10 ** e)}" y2="${Y(10 ** e)}"/><text x="${ml - 8}" y="${Y(10 ** e) + 4}" text-anchor="end">10${e ? '<tspan dy="-6" font-size="9">' + e + '</tspan>' : '<tspan dy="-6" font-size="9">0</tspan>'}</text>`; }
+    for (let v = 0; v <= xmax; v += 4) s += `<line class="gridl" x1="${X(v)}" x2="${X(v)}" y1="${mt}" y2="${mt + ph}"/><text x="${X(v)}" y="${mt + ph + 18}" text-anchor="middle">${v}</text>`;
+    s += `<text x="${ml + pw / 2}" y="${H - 6}" text-anchor="middle">Eb/N0 (dB)</text><text transform="translate(14 ${mt + ph / 2}) rotate(-90)" text-anchor="middle">probabilidad de error</text>`;
+    const curve = (fn, dash, color) => { let d = ''; for (let v = 0; v <= xmax; v += 0.25) { const p = fn(v); if (p < 10 ** ymin) break; d += (d ? 'L' : 'M') + X(v).toFixed(1) + ' ' + Y(p).toFixed(1); } return `<path d="${d}" fill="none" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="5 5"' : ''}/>`; };
+    s += curve(M.berNoncoherentBFSK, false, t.fg) + curve(M.berCoherentBFSK, true, t.faint);
+    s += curve((v) => 1 - Math.pow(1 - M.berNoncoherentBFSK(v), 288), true, t.tx);
+    for (const p of R.ber || []) if (p.ber > 0 && p.ebn0 <= xmax) s += `<circle cx="${X(p.ebn0)}" cy="${Y(p.ber)}" r="4.5" fill="${t.rx}" stroke="${t.panel}" stroke-width="1.5"/>`;
+    for (const p of R.per || []) if (p.per > 0 && p.ebn0 <= xmax) s += `<rect x="${X(p.ebn0) - 4.5}" y="${Y(p.per) - 4.5}" width="9" height="9" fill="${t.tx}" stroke="${t.panel}" stroke-width="1.5"/>`;
+    s += `<rect class="axis" x="${ml}" y="${mt}" width="${pw}" height="${ph}" fill="none"/>`;
+    svg.innerHTML = s;
+    $('legBer').innerHTML = `<span><i style="background:${t.fg}"></i>Teoría FSK no coherente ½·e^(−Eb/2N0)</span><span><i style="background:${t.faint}"></i>Teoría FSK coherente (referencia)</span><span><i style="background:${t.rx};border-radius:50%"></i>BER simulada del detector</span><span><i style="background:${t.tx}"></i>Tramas de 32 B con error (simuladas y teoría)</span>`;
+    // eco
+    const e = $('chartEcho'), W2 = 460, H2 = 360, ml2 = 46, mb2 = 44, mt2 = 14, pw2 = W2 - ml2 - 12, ph2 = H2 - mt2 - mb2;
+    const lv = [0, 0.5, 1, 1.5], Y2 = (v) => mt2 + ph2 - (v / 100) * ph2;
+    let s2 = '';
+    for (let v = 0; v <= 100; v += 25) s2 += `<line class="gridl" x1="${ml2}" x2="${ml2 + pw2}" y1="${Y2(v)}" y2="${Y2(v)}"/><text x="${ml2 - 8}" y="${Y2(v) + 4}" text-anchor="end">${v} %</text>`;
+    const gw = pw2 / lv.length, bw = gw * 0.32;
+    lv.forEach((r, i) => {
+      const cx = ml2 + gw * i + gw / 2;
+      ['simple', 'salto'].forEach((m, j) => {
+        const row = (R.echo || []).find((q) => q.mode === m && q.reverb === r); if (!row) return;
+        const pct = (row.ok / row.n) * 100, x = cx + (j ? 3 : -bw - 3);
+        s2 += `<rect x="${x}" y="${Y2(pct)}" width="${bw}" height="${Y2(0) - Y2(pct)}" fill="${j ? t.rx : t.faint}"/><text x="${x + bw / 2}" y="${Y2(pct) - 6}" text-anchor="middle">${Math.round(pct)}</text>`;
+      });
+      s2 += `<text x="${cx}" y="${mt2 + ph2 + 18}" text-anchor="middle">${r === 0 ? 'sin eco' : r}</text>`;
+    });
+    s2 += `<text x="${ml2 + pw2 / 2}" y="${H2 - 6}" text-anchor="middle">intensidad del eco</text><line class="axis" x1="${ml2}" x2="${ml2 + pw2}" y1="${Y2(0)}" y2="${Y2(0)}"/>`;
+    e.innerHTML = s2;
+    $('legEcho').innerHTML = `<span><i style="background:${t.faint}"></i>FSK simple (2 tonos)</span><span><i style="background:${t.rx}"></i>Con salto de frecuencia (8 tonos)</span>`;
+    // tabla
+    $('resHead').innerHTML = '<tr><th>Eb/N0</th><th>BER simulada</th><th>BER teórica</th><th>Bits</th><th>Tramas correctas</th><th>Error CRC</th><th>Perdidas</th><th>Eb/N0 estimado</th></tr>';
+    const ebs = [...new Set([...(R.ber || []).map((p) => p.ebn0), ...(R.per || []).map((p) => p.ebn0)])].sort((a, b) => a - b);
+    $('resBody').innerHTML = ebs.map((v) => { const b = (R.ber || []).find((p) => p.ebn0 === v), p = (R.per || []).find((q) => q.ebn0 === v);
+      return `<tr><td>${v} dB</td><td>${b ? fmtExp(b.ber) : '—'}</td><td>${fmtExp(M.berNoncoherentBFSK(v))}</td><td>${b ? b.bits.toLocaleString('es-MX') : '—'}</td><td>${p ? p.ok + ' de ' + p.n : '—'}</td><td>${p ? p.crc : '—'}</td><td>${p ? p.lost : '—'}</td><td>${p && p.ebn0Est !== null ? fmt1(p.ebn0Est) + ' dB' : '—'}</td></tr>`; }).join('');
+    const cfgTxt = R.cfg ? `${R.cfg.mode === 'salto' ? 'salto de frecuencia' : 'FSK simple'}, ${R.cfg.baud} bit/s` : 'salto de frecuencia, 100 bit/s';
+    $('resSource').textContent = state.resultsSource === 'ref'
+      ? `Resultados de referencia calculados con este mismo código en Node.js (${cfgTxt}, ${R.frames || 50} tramas de 32 bytes por punto). Puedes repetirlos aquí.`
+      : `Resultados calculados en este navegador (${cfgTxt}).`;
+  }
+  async function runSweep() {
+    const cfg = Object.assign({}, state.cfg), sw = { cancel: false }; state.sweep = sw;
+    $('btnSweep').disabled = true; $('btnSweepStop').disabled = false;
+    const R = { cfg, frames: 20, ber: [], per: [], echo: [] }; state.results = R; state.resultsSource = 'nav';
+    const berPts = [0, 2, 4, 6, 8, 10, 12], perPts = [6, 8, 10, 12, 14, 16, 18, 20], F = 20, total = berPts.length + perPts.length * F + 8 * 10;
+    let done = 0; const bar = () => ($('sweepBar').style.width = (done / total) * 100 + '%');
+    for (const eb of berPts) {
+      let e = 0, n = 0, seed = 1 + eb * 1000;
+      while (((e < 150 && n < 80000) || n < 12000) && !sw.cancel) { e += M.berTrial(eb, SIM_FS, cfg, 2000, seed++); n += 2000; await tick(); }
+      R.ber.push({ ebn0: eb, errors: e, bits: n, ber: e / n }); done++; bar(); renderCharts(); if (sw.cancel) break;
+    }
+    for (const eb of perPts) {
+      if (sw.cancel) break;
+      const r = { ebn0: eb, ok: 0, crc: 0, lost: 0, n: F, ebs: 0, ebc: 0 };
+      for (let s = 0; s < F && !sw.cancel; s++) { const q = M.frameTrial(eb, SIM_FS, cfg, s, 32, {}, 5000 + eb * 100 + s); r[q.status]++; if (q.ebn0Est !== null) { r.ebs += q.ebn0Est; r.ebc++; } done++; bar(); await tick(); }
+      r.per = 1 - r.ok / F; r.ebn0Est = r.ebc ? r.ebs / r.ebc : null; R.per.push(r); renderCharts();
+    }
+    for (const mode of ['simple', 'salto']) for (const reverb of [0, 0.5, 1, 1.5]) {
+      if (sw.cancel) break;
+      const r = { mode, reverb, ok: 0, crc: 0, lost: 0, n: 10 };
+      for (let s = 0; s < 10 && !sw.cancel; s++) { const q = M.frameTrial(20, SIM_FS, Object.assign({}, cfg, { mode }), s, 32, { reverb }, 9000 + reverb * 100 + s); r[q.status]++; await tick(); }
+      done += 10; bar(); R.echo.push(r); renderCharts();
+    }
+    $('btnSweep').disabled = false; $('btnSweepStop').disabled = true; state.sweep = null;
+    toast(sw.cancel ? 'Barrido detenido.' : 'Barrido terminado.');
+  }
+  function resultsCsv() {
+    const R = state.results; if (!R) return '';
+    let out = '# BER del detector (sincronía ideal)\n' + toCsv((R.ber || []).map((p) => ({ ebn0_db: p.ebn0, errores: p.errors, bits: p.bits, ber_sim: p.ber, ber_teoria: M.berNoncoherentBFSK(p.ebn0) })));
+    out += '\n# Tramas de 32 bytes por el canal simulado\n' + toCsv((R.per || []).map((p) => ({ ebn0_db: p.ebn0, tramas: p.n, correctas: p.ok, error_crc: p.crc, perdidas: p.lost, per_sim: p.per, per_teoria: 1 - Math.pow(1 - M.berNoncoherentBFSK(p.ebn0), 288), ebn0_estimado_db: p.ebn0Est })));
+    out += '\n# Robustez al eco (Eb/N0 = 20 dB)\n' + toCsv((R.echo || []).map((p) => ({ modo: p.mode, eco: p.reverb, tramas: p.n, correctas: p.ok, error_crc: p.crc, perdidas: p.lost })));
+    return out;
+  }
+
+  // ---------- estados activos del tablero ----------
+  const continuous = new Set(), flows = { tx: false, rx: false };
+  const markActive = (id) => continuous.add(id);
+  const flowRow = (row, on) => { flows[row] = flows[row] || on; };
+  function updateBoard() {
+    const t = now();
+    if (state.mic && state.visualRx === state.mic.rx) { markActive('rx-mic'); markActive('rx-goertzel'); flowRow('rx', true); }
+    if (state.visualRx && state.visualRx.demod.state === 'data') { markActive('rx-sync'); markActive('rx-dec'); }
+    for (const b of BLOCKS) {
+      const g = chipEls[b.id].g, list = (state.active[b.id] || []).filter((a) => a.to > t);
+      state.active[b.id] = list;
+      const cur = list.filter((a) => a.from <= t);
+      g.classList.toggle('on', continuous.has(b.id) || cur.some((a) => a.cls === 'on'));
+      g.classList.toggle('okflash', cur.some((a) => a.cls === 'okflash'));
+      g.classList.toggle('errflash', cur.some((a) => a.cls === 'errflash'));
+    }
+    if (!(state.visualRx && state.visualRx.demod.state === 'search' && state.visualRx.demod.last.corr > 0.35)) chipEls['rx-sync'].g.classList.remove('search');
+    for (const tr of traceEls) {
+      const on = flows[tr.row] && chipEls[tr.from].g.classList.contains('on');
+      tr.e.classList.toggle('flow', on); tr.e.classList.toggle(tr.row, on);
+    }
+    if (!state.tx && !state.sim) document.getElementById('air').classList.remove('on');
+    continuous.clear(); flows.tx = false; flows.rx = false;
+  }
+
+  let lastLive = 0;
+  function frame() {
+    txProgress(); simProgress(); updateBoard();
+    drawStrip(); drawSpec(); drawDet();
+    if (now() - lastLive > 250) { lastLive = now(); const s = STAGES[state.stage]; if (s) $('stLive').innerHTML = s.live(); }
+    requestAnimationFrame(frame);
+  }
+
+  // ---------- eventos ----------
+  function setTab(tab) {
+    state.tab = tab;
+    document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+    for (const k of ['tx', 'rx', 'sim', 'test']) $('tab-' + k).hidden = k !== tab;
+    $('msgPanel').hidden = !(tab === 'tx' || tab === 'sim');
+    $('instruments').hidden = tab === 'test';
+    if (tab === 'test') renderCharts();
+    stripDirty = true; specClear = true;
+    try { localStorage.setItem('modem-tab', tab); } catch (e) { /* almacenamiento no disponible */ }
+  }
+  document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+  $('cfgMode').addEventListener('change', onCfgChange); $('cfgBaud').addEventListener('change', onCfgChange);
+  $('msg').addEventListener('input', () => { if (state.strip && state.strip.src === 'idle') state.strip = null; updateMsgInfo(); });
+  $('btnTx').addEventListener('click', transmit); $('btnStopTx').addEventListener('click', stopTx);
+  $('btnBurst').addEventListener('click', burst); $('btnWav').addEventListener('click', downloadWav);
+  $('btnMic').addEventListener('click', startMic); $('btnMicStop').addEventListener('click', stopMic);
+  $('fileRec').addEventListener('change', (e) => analyzeFile(e.target.files[0]));
+  $('btnSerStart').addEventListener('click', startSeries); $('btnSerEnd').addEventListener('click', endSeries);
+  $('btnSerCsv').addEventListener('click', () => { if (!state.seriesRows.length) { toast('Aún no hay series terminadas.'); return; } saveFile('series_prueba_fisica.csv', toCsv(state.seriesRows), 'text/csv'); });
+  $('btnFrameCsv').addEventListener('click', () => { if (!state.frameLog.length) { toast('Aún no hay tramas de prueba registradas.'); return; } saveFile('tramas_prueba_fisica.csv', toCsv(state.frameLog), 'text/csv'); });
+  for (const id of ['simEb', 'simRv', 'simDr']) $(id).addEventListener('input', updateSimLabels);
+  $('btnSim').addEventListener('click', () => runSim(false)); $('btnSim10').addEventListener('click', () => runSim(true)); $('btnSimStop').addEventListener('click', stopSim);
+  $('btnSweep').addEventListener('click', runSweep); $('btnSweepStop').addEventListener('click', () => { if (state.sweep) state.sweep.cancel = true; });
+  $('btnResCsv').addEventListener('click', () => saveFile('resultados_simulacion.csv', resultsCsv(), 'text/csv'));
+  $('btnClear').addEventListener('click', () => { $('msgs').innerHTML = '<li class="empty" style="display:block;border:0;background:none;">Lista vacía.</li>'; state.counters = { ok: 0, crc: 0, ab: 0, eb: null }; updateCounters(); });
+  window.addEventListener('resize', () => { stripDirty = true; });
+
+  // ---------- inicio ----------
+  buildBoard(); buildSpecAxis(); readCfg(); updateMsgInfo(); updateToneLegend(); updateSimLabels(); updateCounters();
+  setVal('rx-mic', 'apagado'); setVal('rx-goertzel', '2 tonos por par'); setVal('rx-sync', 'Barker-13'); setVal('rx-dec', 'E₁ > E₀'); setVal('rx-crc', 'CCITT'); setVal('rx-text', 'UTF-8');
+  showStage('tx-text');
+  let saved = null; try { saved = localStorage.getItem('modem-tab'); } catch (e) { /* almacenamiento no disponible */ }
+  setTab(saved && ['tx', 'rx', 'sim', 'test'].includes(saved) ? saved : 'tx');
+  window.__modemApp = { state, runSim, startMic, analyzeFile, runSweep, setTab };
+  requestAnimationFrame(frame);
+})();
+</script>
